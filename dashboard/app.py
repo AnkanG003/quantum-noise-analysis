@@ -9,7 +9,7 @@ from qiskit_aer import Aer
 from qiskit import transpile
 
 from src.circuits import create_hadamard_circuit, create_bell_circuit
-from src.noise_models import get_depolarizing_noise
+from src.noise_models import get_custom_noise
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -34,6 +34,12 @@ shots = st.sidebar.slider("Shots", 1000, 20000, 10000, step=1000)
 
 noise_levels = [round(x, 2) for x in [i * 0.05 for i in range(int(max_noise / 0.05) + 1)]]
 
+noise_types = st.sidebar.multiselect(
+    "Select Noise Types",
+    ["Depolarizing", "Bit Flip", "Phase Flip"],
+    default=["Depolarizing"]
+)
+
 simulator = Aer.get_backend('aer_simulator')
 
 
@@ -55,7 +61,7 @@ if mode == "Single Circuit":
     data = []
 
     for noise in noise_levels:
-        noise_model = get_depolarizing_noise(noise)
+        noise_model = get_custom_noise(noise, noise_types)
 
         result = simulator.run(
             compiled,
@@ -65,13 +71,15 @@ if mode == "Single Circuit":
 
         counts = result.get_counts()
 
+        # ---------- Error Calculation ----------
         if circuit_type == "Hadamard":
             zero_count = counts.get('0', 0)
             ideal = shots / 2
             error = abs(ideal - zero_count) / shots
-        else:
-            correct = counts.get('00', 0) + counts.get('11', 0)
-            error = (shots - correct) / shots
+
+        else:  # Bell Circuit (FIXED)
+            wrong = counts.get('01', 0) + counts.get('10', 0)
+            error = wrong / shots
 
         errors.append(error)
 
@@ -102,7 +110,7 @@ if mode == "Single Circuit":
     if circuit_type == "Hadamard":
         st.success("Hadamard circuits remain relatively stable under noise.")
     else:
-        st.error("Bell circuits degrade rapidly due to entanglement and two-qubit gate errors.")
+        st.error("Bell circuits show increasing errors due to entanglement sensitivity.")
 
 
 # ===========================
@@ -120,9 +128,9 @@ elif mode == "Compare Both":
     bell_errors = []
 
     for noise in noise_levels:
-        noise_model = get_depolarizing_noise(noise)
+        noise_model = get_custom_noise(noise, noise_types)  # FIXED
 
-        # Hadamard
+        # ---------- Hadamard ----------
         result_h = simulator.run(
             compiled_h,
             shots=shots,
@@ -134,7 +142,7 @@ elif mode == "Compare Both":
         error_h = abs((shots / 2) - zero_count) / shots
         hadamard_errors.append(error_h)
 
-        # Bell
+        # ---------- Bell (FIXED) ----------
         result_b = simulator.run(
             compiled_b,
             shots=shots,
@@ -142,8 +150,8 @@ elif mode == "Compare Both":
         ).result()
 
         counts_b = result_b.get_counts()
-        correct = counts_b.get('00', 0) + counts_b.get('11', 0)
-        error_b = (shots - correct) / shots
+        wrong = counts_b.get('01', 0) + counts_b.get('10', 0)
+        error_b = wrong / shots
         bell_errors.append(error_b)
 
     # ---------- Table ----------
@@ -172,9 +180,8 @@ elif mode == "Compare Both":
 
     # ---------- Insight ----------
     st.subheader("Insight")
-
-    st.success("Hadamard circuits remain relatively stable under noise.")
-    st.error("Bell circuits show significantly higher sensitivity due to entanglement.")
+    st.success("Hadamard circuits are more robust under noise.")
+    st.error("Bell circuits are highly sensitive due to entanglement.")
 
 
 # ===========================
